@@ -21,96 +21,110 @@ class Backoffice extends CI_Controller {
 
 	public function index()
 	{
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
+ 		if($this->session->userdata('status')!="login"){
+ 			redirect(base_url().'login');
  		}
-		$data['penjualan'] = $this->db->query("select DATE_FORMAT(rp_created_date,'%M %y') bulan, sum(rp_total_harga) amount, sum(rp_qty)barang from ringkasan_pesanan where year(rp_created_date)='2021' GROUP BY bulan ORDER BY rp_created_date")->result();
-		$data['kategori'] = $this->db->query("select kb_nama_kategori,sum(dp_total_harga) penjualan from detail_pesanan left join barang_data on bd_id = dp_barang left join kategori_barang on kb_id = bd_kategori GROUP BY bd_kategori")->result();
-		$data['summary'] = $this->db->query("select count(distinct ud_id) user_cnt,stok,penjualan, barang_terjual from user_data join (select sum(bd_stok) stok from barang_data)bd join (select sum(dp_qty) barang_terjual,sum(dp_total_harga) penjualan from detail_pesanan)dp")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/home',$data);
-		$this->load->view('backoffice/include/footer_bo');
+		$data['booked_loan'] = $this->db->query("select DATE_FORMAT(bold_booked_month,'%M %y') bulan, sum(ifnull(ld_loan_amount,lfd_cap_amount)) amount from booked_loan_data left join loan_data on ld_id = bold_data_id and bold_type=1 left join line_facility_data on lfd_id = bold_data_id and bold_type=2 where year(bold_booked_month)='2021' GROUP BY bulan ORDER BY bold_booked_month")->result();
+		$data['product'] = $this->db->query("select mp_product_name product,sum(ifnull(ld_loan_amount,lfd_cap_amount)) amount from booked_loan_data left join loan_data on ld_id = bold_data_id and bold_type=1 left join line_facility_data on lfd_id = bold_data_id and bold_type=2 left join mr_product on mp_id = ifnull(ld_product_id,lfd_product_id) GROUP BY product")->result();
+		$data['summary'] = $this->db->query("select 0 user_cnt,0 stok, 0 penjualan, 0 barang_terjual")->result();
+		$this->load->view('include/header_bo');
+		$this->load->view('include/navbar_bo');
+		$this->load->view('home',$data);
+		$this->load->view('include/footer_bo');
+	}
+	public function booking(){
+		$prod = $this->uri->segment(3); 
+		$get_book = $this->input->post('booked');
+		$get_unbook = $this->input->post('unbook');
+		$get_ml_number = $this->input->post('ml_number');
+		$get_booked_month = $this->input->post('booked_month');
+		if(empty($get_book)){
+			$book = 0;
+			$unbook =$get_unbook;
+			$ml_number=$get_ml_number;
+			$booked_month=$get_booked_month;
+		}else{
+			$book = $get_book;
+			$unbook =$get_unbook;
+			$ml_number=$get_ml_number;
+			$booked_month=$get_booked_month;
+		}
+
+		echo json_encode($book)."<br>";
+		echo json_encode($booked_month)."<br>";
+		$count = count($book);
+		if($count>1){
+			$in_id = implode(',',$book);
+			$in_id_unbook = implode(',',$unbook);
+		}else{
+			$in_id = $book[0];
+			$in_id_unbook = $unbook[0];
+		}
+		if($in_id==0){
+			$delete =  $this->db->query("DELETE FROM booked_loan_data where bold_data_id in ($in_id_unbook)");
+		}
+		if($prod==1){
+			for($i=0;$i<$count;$i++){
+			$insert =  $this->db->query("INSERT INTO `booked_loan_data` (`bold_data_id`, `bold_type`, `bold_booked_month`) select ld_id,1,ld_disbursed_date from loan_data where ld_id = $book[$i] and ld_id not in (select bold_data_id from booked_loan_data where bold_type=1)");
+				if($ml_number[$i]=='NULL' or $ml_number[$i]==''){
+					$update_ml_number = $this->db->query("UPDATE loan_data set ld_ml_number = null where ld_id = $book[$i]");
+				}else{
+					$update_ml_number = $this->db->query("UPDATE loan_data set ld_ml_number = '$ml_number[$i]' where ld_id = $book[$i]");
+				}
+			}
+			$delete =  $this->db->query("DELETE FROM booked_loan_data where bold_data_id in ($in_id_unbook) and bold_data_id not in ($in_id) and bold_type=1");
+		}else{
+			for($i=0;$i<$count;$i++){
+				if($booked_month[$i]=='NULL' or $booked_month[$i]==''){
+					echo "<script type='text/javascript'>window.alert('Harap isi Booked Month terlebih dahulu.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
+				}else{
+					$insert =  $this->db->query("INSERT INTO `booked_loan_data` (`bold_data_id`, `bold_type`, `bold_booked_month`) select lfd_id,2,$booked_month[$i] from line_facility_data where lfd_id = $book[$i] and lfd_id not in (select bold_data_id from booked_loan_data where bold_type=2)");
+					$update_booked_month = $this->db->query("UPDATE booked_loan_data set bold_booked_month = '$booked_month[$i]' where bold_data_id = $book[$i] and bold_type=2");
+				}
+			}
+			$delete =  $this->db->query("DELETE FROM booked_loan_data where bold_data_id in ($in_id_unbook) and bold_data_id not in ($in_id) and bold_type=2");
+		}
+		redirect($_SERVER['HTTP_REFERER']);
 	}
 	public function user_data(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
+ 		if($this->session->userdata('status')!="login"){
+ 			redirect(base_url().'login');
  		}
 		$data['user_data'] = $this->db->query("select * from user_data")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/user_data',$data);
-		$this->load->view('backoffice/include/footer_bo');
+		$this->load->view('include/header_bo');
+		$this->load->view('include/navbar_bo');
+		$this->load->view('user_data',$data);
+		$this->load->view('include/footer_bo');
 	}
-	public function semua_pesanan(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
+	public function loans(){
+ 		if($this->session->userdata('status')!="login"){
+ 			redirect(base_url().'login');
  		}
-		$data['semua_pesanan'] = $this->db->query("select * from ringkasan_pesanan order by rp_status asc,rp_created_date desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/semua_pesanan',$data);
-		$this->load->view('backoffice/include/script_pesanan');
-		$this->load->view('backoffice/include/footer_bo');
+		$data['inv_loan'] = $this->db->query("select loan_data.*,if(bold_id is not null,'Y','N') booked from loan_data left join booked_loan_data on bold_data_id = ld_id and bold_type = 1 where ld_product_id not in (4,5) order by ld_id desc")->result();
+		$data['wctl_loan'] = $this->db->query("select loan_data.*,if(bold_id is not null,'Y','N') booked from loan_data left join booked_loan_data on bold_data_id = ld_id and bold_type = 1 where ld_product_id =4 order by ld_id desc")->result();
+		$data['osf_loan'] = $this->db->query("select loan_data.*,if(bold_id is not null,'Y','N') booked from loan_data left join booked_loan_data on bold_data_id = ld_id and bold_type = 1 where ld_product_id =5 order by ld_id desc")->result();
+		$this->load->view('include/header_bo');
+		$this->load->view('include/navbar_bo');
+		$this->load->view('loans',$data);
+		$this->load->view('include/script_ext');
+		$this->load->view('include/footer_bo');
 	}
-	public function pengecekan(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['pengecekan'] = $this->db->query("select * from ringkasan_pesanan left join user_data on ud_id = rp_user where rp_status in (1,2) order by rp_status asc,rp_created_date desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/pengecekan',$data);
-		$this->load->view('backoffice/include/script_pesanan');
-		$this->load->view('backoffice/include/footer_bo');
-	}
-	public function diproses(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['diproses'] = $this->db->query("select * from ringkasan_pesanan left join user_data on ud_id = rp_user where rp_status =3 order by rp_status asc,rp_created_date desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/listproses',$data);
-		$this->load->view('backoffice/include/script_pesanan');
-		$this->load->view('backoffice/include/footer_bo');
-	}
-	public function pengiriman(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['pengiriman'] = $this->db->query("select * from ringkasan_pesanan left join user_data on ud_id = rp_user where rp_status =4 order by rp_status asc,rp_created_date desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/pengiriman',$data);
-		$this->load->view('backoffice/include/script_pesanan');
-		$this->load->view('backoffice/include/footer_bo');
-	}
-	public function pesanan_selesai(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['pesanan_selesai'] = $this->db->query("select * from ringkasan_pesanan where rp_status =5 order by rp_status asc,rp_created_date desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/pes_selesai',$data);
-		$this->load->view('backoffice/include/script_pesanan');
-		$this->load->view('backoffice/include/footer_bo');
-	}
-	public function data_barang(){
+	public function line_based(){
 		$url = $this->uri->segment(3); 
 		$id = $this->uri->segment(4); 
 
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
+ 		if($this->session->userdata('status')!="login"){
+ 			redirect(base_url().'login');
  		}
-		$data['kategori'] = $this->db->query("select * from kategori_barang")->result();
-		$data['kategori2'] = $this->db->query("select * from kategori_barang")->result();
-		$data['data_barang'] = $this->db->query("select bd.*,kb_nama_kategori nama_kategori from barang_data bd left join kategori_barang on kb_id = bd_kategori")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/data_barang',$data);
-		$this->load->view('backoffice/include/footer_bo');
+		$data['product'] = $this->db->query("select * from mr_product")->result();
+		$data['product2'] = $this->db->query("select * from mr_product")->result();
+		$data['contract'] = $this->db->query("select * from mr_contract")->result();
+		$data['contract2'] = $this->db->query("select * from mr_contract")->result();
+		$data['lf_data'] = $this->db->query("SELECT lfd_id,lfd_number,lfd_product_id,lfd_contract_id,concat(mp_product_name,' - ',mc_contract_name) product,lfd_borrower_name,lfd_cap_amount,bold_booked_month,lfd_rm,lfd_vp,if(bold_id is not null,'Y','N') booked FROM line_facility_data left join booked_loan_data on bold_data_id = lfd_id and bold_type = 2 left join mr_product on mp_id = lfd_product_id left join mr_contract on mc_id = lfd_contract_id")->result();
+		$this->load->view('include/header_bo');
+		$this->load->view('include/navbar_bo');
+		$this->load->view('line_based',$data);
+		$this->load->view('include/footer_bo');
 
 		if(isset($_POST['submit'])){
 			$nama_barang = $this->input->post('nama_barang');
@@ -153,26 +167,44 @@ class Backoffice extends CI_Controller {
 			if (confirm('Anda yakin hapus barang?')) {
 			  // Save it!
 			".$this->db->query("DELETE from barang_data WHERE `bd_id` = $id")."
-			  window.location.href = '".base_url()."backoffice/data_barang';
+			  window.location.href = '".base_url()."data_barang';
 			} else {
 			  // Do nothing!
-			  window.location.href = '".base_url()."backoffice/data_barang';
+			  window.location.href = '".base_url()."data_barang';
 			}
 			</script>";
 		}
 	}
-	public function kategori(){
+	public function claimed(){
 		$url = $this->uri->segment(3); 
 		$id = $this->uri->segment(4); 
 
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
+ 		if($this->session->userdata('status')!="login"){
+ 			redirect(base_url().'login');
  		}
-		$data['kategori'] = $this->db->query("select * from kategori_barang")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/kategori',$data);
-		$this->load->view('backoffice/include/footer_bo');
+		$data['claimed'] = $this->db->query("SELECT
+												ifnull( ld_loan_number, lfd_number ) loan_number,
+												concat( mp_product_name, ' - ', mc_contract_name ) product,
+												ifnull(ld_borrower_name,lfd_borrower_name) borrower_name,
+												ifnull(rm.ud_fullname,lfd_rm) rm,
+												ifnull(vp.ud_fullname,lfd_vp) vp,
+												ifnull(ld_mpf_rate,lfd_mpf_rate) mpf_rate,
+												ifnull(ld_mpf_rate/100*ld_loan_amount,lfd_mpf_rate/100*lfd_cap_amount) mpfee,
+												ifnull(ld_loan_amount,lfd_cap_amount) amount,
+												ld_disbursed_date disbursed_date,
+												bold_booked_month booked_month
+											FROM
+												booked_loan_data
+												LEFT JOIN loan_data ON ld_id = bold_data_id AND bold_type = 1
+												LEFT JOIN line_facility_data ON lfd_id = bold_data_id AND bold_type = 2
+												LEFT JOIN mr_product ON mp_id = ifnull( ld_product_id, lfd_product_id )
+												LEFT JOIN mr_contract ON mc_id = ifnull(ld_contract_id,lfd_contract_id)
+												left join user_data rm on rm.ud_id = ld_rm
+												left join user_data vp on vp.ud_id = ld_vp")->result();
+		$this->load->view('include/header_bo');
+		$this->load->view('include/navbar_bo');
+		$this->load->view('claimed',$data);
+		$this->load->view('include/footer_bo');
 
 		if(isset($_POST['submit'])){
 			$kategori = $this->input->post('kategori');
@@ -192,278 +224,72 @@ class Backoffice extends CI_Controller {
 			if (confirm('Anda yakin hapus kategori?')) {
 			  // Save it!
 			".$this->db->query("DELETE from kategori_barang WHERE `kb_id` = $id")."
-			  window.location.href = '".base_url()."backoffice/kategori';
+			  window.location.href = '".base_url()."kategori';
 			} else {
 			  // Do nothing!
-			  window.location.href = '".base_url()."backoffice/kategori';
+			  window.location.href = '".base_url()."kategori';
 			}
 			</script>";
 		}
 	}
-
-	public function banner(){
+	public function lf(){
 		$url = $this->uri->segment(3); 
-		$id = $this->uri->segment(4); 
+		$lf_id = $this->uri->segment(4);
+		$lf_number= $this->input->post('lf_number');
+		$product = $this->input->post('product');
+		$borrower_name = $this->input->post('borrower_name');
+		$contract = $this->input->post('contract');
+		$rm = $this->input->post('rm');
+		$vp = $this->input->post('vp');
+		$cap = $this->input->post('cap');
+		$user = $this->session->userdata('id');
 
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['banner'] = $this->db->query("select * from slide_banner")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/banner',$data);
-		$this->load->view('backoffice/include/footer_bo');
-
-		if(isset($_POST['submit'])){
-			$banner = $this->input->post('banner');
-			$path = $_FILES['gambar_banner']['name'];
-			$target_dir = getcwd()."/assets/images/banner/";
-			if($url=='tambah'){
-				$basename = date("YmdHms").'.'.pathinfo($path, PATHINFO_EXTENSION);
-				$target_file = $target_dir.$basename;
-
-				$upload = move_uploaded_file($_FILES["gambar_banner"]["tmp_name"], $target_file);
-
-				$run = $this->db->query("INSERT INTO `slide_banner`(`sb_id`, `sb_gambar`, `sb_created_date`) VALUES (NULL, '$basename', NOW());");
-				echo "<script type='text/javascript'>window.alert('Tambah Banner Berhasil.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
-
-			}else if($url=='edit'){
-				if($_FILES['gambar_banner']['size'] == 0){
-					
-				}else{
-					$basename = date("YmdHms").'.'.pathinfo($path, PATHINFO_EXTENSION);
-					$target_file = $target_dir.$basename;
-
-					$upload = move_uploaded_file($_FILES["gambar_banner"]["tmp_name"], $target_file);
-
-
-					$run = $this->db->query("UPDATE `slide_banner` SET `sb_gambar` = '$basename', `sb_created_date` = NOW() WHERE `sb_id` = $id;");
-				}
-				echo "<script type='text/javascript'>window.alert('Update Banner Berhasil.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
+		if($url=='add'){
+			$run = $this->db->query("INSERT INTO line_facility_data(lfd_number,lfd_borrower_name, `lfd_product_id`, `lfd_contract_id`, lfd_rm, lfd_vp, lfd_cap_amount) VALUES ('$lf_number','$borrower_name','$product','$contract','$rm','$vp','$cap');
+	");
+			if($run){
+				echo "<script type='text/javascript'>window.alert('Add Line Facility Successfully.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
+			}else{
+				echo "<script type='text/javascript'>window.alert('Add Line Facility Failed.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
+			}
+		}else if($url=='edit'){
+			$run = $this->db->query("UPDATE line_facility_data set lfd_number = '$lf_number', lfd_borrower_name= '$borrower_name', `lfd_product_id` ='$product', `lfd_contract_id` = '$contract', lfd_rm = '$rm', lfd_vp = '$vp', lfd_cap_amount= '$cap', lfd_updated_by =$user where lfd_id = $lf_id");
+			if($run){
+				echo "<script type='text/javascript'>window.alert('Update Line Facility Successfully.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
+			}else{
+				echo "<script type='text/javascript'>window.alert('Update Line Facility Failed.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
+			}
+		}else{
+			$run = $this->db->query("DELETE from line_facility_data where lfd_id = $lf_id");
+			if($run){
+				echo "<script type='text/javascript'>window.alert('Delete Line Facility Successfully.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
+			}else{
+				echo "<script type='text/javascript'>window.alert('Delete Line Facility Failed.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
 			}
 		}
-		if($url=='hapus'){
-			echo "<script type='text/javascript'>
-			if (confirm('Anda yakin hapus banner?')) {
-			  // Save it!
-			".$this->db->query("DELETE from slide_banner WHERE `sb_id` = $id")."
-			  window.location.href = '".base_url()."backoffice/banner';
-			} else {
-			  // Do nothing!
-			  window.location.href = '".base_url()."backoffice/banner';
-			}
-			</script>";
-		}
-	}
-	public function testimoni(){
-		$url = $this->uri->segment(3); 
-		$id = $this->uri->segment(4); 
-
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['testimoni'] = $this->db->query("select * from testimoni_pembeli order by tp_id desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/testimoni',$data);
-		$this->load->view('backoffice/include/footer_bo');
-
-		if(isset($_POST['submit'])){
-			$nama = $this->input->post('nama');
-			$testimoni = $this->input->post('testimoni');
-			if($url=='tambah'){
-				$run = $this->db->query("INSERT INTO `testimoni_pembeli` (`tp_id`, `tp_nama`, `tp_testimoni`, `tp_created_date`) VALUES (NULL, '$nama', '$testimoni', NOW());");
-				echo "<script type='text/javascript'>window.alert('Tambah Testimoni Berhasil.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
-
-			}else if($url=='edit'){
-				$run = $this->db->query("UPDATE `testimoni_pembeli` SET `tp_nama` = '$nama', `tp_testimoni` = '$testimoni', `tp_created_date` = NOW() WHERE `tp_id` = $id;");
-				echo "<script type='text/javascript'>window.alert('Update Testimoni Berhasil.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
-			}
-		}
-		if($url=='hapus'){
-			echo "<script type='text/javascript'>
-			if (confirm('Anda yakin hapus Testimoni?')) {
-			  // Save it!
-			".$this->db->query("DELETE from testimoni_pembeli WHERE `tp_id` = $id")."
-			  window.location.href = '".base_url()."backoffice/testimoni';
-			} else {
-			  // Do nothing!
-			  window.location.href = '".base_url()."backoffice/testimoni';
-			}
-			</script>";
-		}
-	}
-
-	public function hubungi_kami(){
-		$url = $this->uri->segment(3); 
-		$id = $this->uri->segment(4); 
-
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['hubungi_kami'] = $this->db->query("select * from hubungi_kami order by hk_id desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/hubungi_kami',$data);
-		$this->load->view('backoffice/include/footer_bo');
-
-		if($url=='hapus'){
-			echo "<script type='text/javascript'>
-			if (confirm('Anda yakin hapus ?')) {
-			  // Save it!
-			".$this->db->query("DELETE from testimoni_pembeli WHERE `tp_id` = $id")."
-			  window.location.href = '".base_url()."backoffice/testimoni';
-			} else {
-			  // Do nothing!
-			  window.location.href = '".base_url()."backoffice/testimoni';
-			}
-			</script>";
-		}
-	}
-
-	public function laporan()
-	{
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['penjualan'] = $this->db->query("select rp_no_pesanan,ud_nama pembeli,rp_total_harga+rp_ongkir total_harga,rp_status,rp_created_date tgl_pembelian from ringkasan_pesanan left join user_data on ud_id = rp_user ORDER BY rp_created_date desc")->result();
-		$data['barang_terlaris'] = $this->db->query("select bd_nama_barang,sum(dp_qty) terjual,max(dp_created_at) tgl_pembelian_terakhir from detail_pesanan left join barang_data on bd_id = dp_barang GROUP BY bd_id ORDER BY terjual desc")->result();
-		$data['pembeli'] = $this->db->query("select ud_nama pembeli,count(distinct rp_id) jml_trx,sum(rp_total_harga+rp_ongkir) total_pembelian,sum(rp_qty) total_barang,max(rp_created_date) tgl_pembelian_terakhir from ringkasan_pesanan left join user_data on ud_id = rp_user GROUP BY rp_user ORDER BY total_pembelian desc;")->result();
-
-		$data['hubungi_kami'] = $this->db->query("select * from hubungi_kami order by hk_id desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/include/navbar_bo');
-		$this->load->view('backoffice/laporan',$data);
-		$this->load->view('backoffice/include/footer_bo');
-	}
-
-	public function print_laporan()
-	{
-		$print = $_GET['radio-print'];
-		if($print == 'radio-tahun' || $print == 'radio-tahun2' || $print == 'radio-tahun3' || $print == 'radio-tahun4'){
-			$tahun = $_GET['tahun'];
-			$where1 = "1=1 and year(";
-			$where2 = ") = ".$tahun;
-			$title = "Filter (Tahun) : ".$tahun;
-		}else if($print == 'radio-bulan' || $print == 'radio-bulan2' || $print == 'radio-bulan3' || $print == 'radio-bulan4'){
-			$tahun = $_GET['tahun'];
-			$bulan = $_GET['bulan'];
-			$where1 = "1=1 and date_format(";
-			$where2 = ",'%Y-%m') = '".$tahun."-".$bulan."'";
-			$title = "Filter (Bulan) : ".$tahun."-".$bulan;
-		}else if($print == 'radio-periode' || $print == 'radio-periode2' || $print == 'radio-periode3' || $print == 'radio-periode4'){
-			$min_date = $_GET['min_date'];
-			$max_date = $_GET['max_date'];
-			$where1 = "1=1 and";
-			$where2 = "between '".$min_date."' and '".$max_date."'";
-			$title = "Filter (periode) : ".$min_date."-".$max_date;
-		}
-
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-		$data['penjualan'] = $this->db->query("select rp_no_pesanan,ud_nama pembeli,rp_total_harga+rp_ongkir total_harga,rp_status,rp_created_date tgl_pembelian from ringkasan_pesanan left join user_data on ud_id = rp_user where $where1 rp_created_date $where2 ORDER BY rp_created_date desc")->result();
-		$data['barang_terlaris'] = $this->db->query("select bd_nama_barang,sum(dp_qty) terjual,max(dp_created_at) tgl_pembelian_terakhir from detail_pesanan left join barang_data on bd_id = dp_barang where $where1 dp_created_at $where2 GROUP BY bd_id ORDER BY terjual desc")->result();
-		$data['pembeli'] = $this->db->query("select ud_nama pembeli,count(distinct rp_id) jml_trx,sum(rp_total_harga+rp_ongkir) total_pembelian,sum(rp_qty) total_barang,max(rp_created_date) tgl_pembelian_terakhir from ringkasan_pesanan left join user_data on ud_id = rp_user where $where1 rp_created_date $where2 GROUP BY rp_user ORDER BY total_pembelian desc;")->result();
-		
-		$data['hubungi_kami'] = $this->db->query("select * from hubungi_kami order by hk_id desc")->result();
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/print_laporan',$data);
-		$this->load->view('backoffice/include/footer_bo');
-	}
-
-	public function login(){
-		$this->load->view('backoffice/include/header_bo');
-		$this->load->view('backoffice/login');
-		$this->load->view('backoffice/include/footer_bo');
-	}
-	public function update_ongkir(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-
- 		$nopesanan = $this->input->post('nopesanan');
-		$ongkir = $this->input->post('ongkir');
-		$id_pesanan = $this->input->post('id_pesanan');
-
- 		$run = $this->db->query("UPDATE ringkasan_pesanan set rp_ongkir = $ongkir where rp_id = $id_pesanan");
-
- 		if($run){
- 			echo "<script type='text/javascript'>window.alert('Update ongkir pesanan $nopesanan berhasil.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 		}else{
- 			echo "<script type='text/javascript'>window.alert('Update ongkir gagal, mohon hubungi administator');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 		}
-	}
-
-
-	public function update_noresi(){
- 		if($this->session->userdata('status')!="login-bo"){
- 			redirect(base_url().'backoffice/login');
- 		}
-
- 		$nopesanan = $this->input->post('nopesanan');;
-		$noresi = $this->input->post('noresi');
-		$id_pesanan = $this->input->post('id_pesanan');
-
- 		$run = $this->db->query("UPDATE ringkasan_pesanan set rp_noresi = $noresi where rp_id = $id_pesanan");
-
- 		if($run){
- 			echo "<script type='text/javascript'>window.alert('Update Nomor Resi pada Pesanan $nopesanan Berhasil.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 		}else{
- 			echo "<script type='text/javascript'>window.alert('Update Nomor Resi pada Pesanan $nopesanan Gagal, mohon hubungi administator');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 		}
-	}
-
-	public function update_status(){
-		$status = $_GET['status'];
-		$id_pesanan = $_GET['id_pesanan'];
-		$query_update = "UPDATE ringkasan_pesanan set rp_status = rp_status+1 where rp_id = $id_pesanan";
-		$query_cek =$this->db->query("SELECT * from ringkasan_pesanan where rp_id = $id_pesanan")->row();
-
- 		if($query_cek){
- 			if($status==1){
-				$this->db->query($query_update);
- 				echo "<script type='text/javascript'>window.alert('Pemeriksaan selesai, menunggu pembayaran dari customer.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 			}else if ($status==2){
-				$this->db->query($query_update);
- 				echo "<script type='text/javascript'>window.alert('Pemeriksaan Bukti Transfer Selesai, Pesanan dapat di proses di halaman Proses');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 			}else if ($status==3){
- 				if(is_null($query_cek->rp_noresi)){
- 					echo "<script type='text/javascript'>window.alert('Pastikan no Resi terisi.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 				}else{
-				$this->db->query($query_update);
- 				echo "<script type='text/javascript'>window.alert('Pemrosesan pesanan selesai, pesanan siap dikirim!.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 				}
- 			}else if ($status==4){
-				$this->db->query($query_update);
- 				echo "<script type='text/javascript'>window.alert('Pesanan Selesai!.');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 			}
- 		}else{
- 			echo "<script type='text/javascript'>window.alert('Update Nomor Resi pada Pesanan $nopesanan Gagal, mohon hubungi administator');window.location.href = '".$_SERVER['HTTP_REFERER']."';</script>";
- 		}
 
 	}
-
 	public function login_act()
 	{
-		$username = $this->input->post('username');
+		$nik = $this->input->post('nik');
 		$password = $this->input->post('password');
 
-		$cek = $this->db->query("SELECT * FROM bo_users WHERE bu_username='$username' and bu_password = sha1('$password')")->row();
+		$cek = $this->db->query("SELECT * FROM user_data WHERE ud_no_induk='$nik' and ud_password = sha1('$password')")->row();
 
 		if($cek){
-		$id = $cek->bu_id;
-		$gdata = $this->db->query("SELECT * from bo_users where bu_id = $id")->row();
+		$id = $cek->ud_id;
+		$gdata = $this->db->query("SELECT * from user_data where ud_id = $id")->row();
 			$session = array(
-				'id' 		=> $cek->bu_id,
-				'nama'		=> $cek->bu_name,
-				'status'	=> 'login-bo'
+				'id' 		=> $cek->ud_id,
+				'nik'		=> $cek->ud_nik,
+				'nama'		=> $cek->ud_fullname,
+				'level'		=> $cek->ud_level,
+				'status'	=> 'login'
 			);
 			$this->session->set_userdata($session);
-			$this->db->query("UPDATE bo_users SET bu_last_login = NOW() where bu_id = $id");
 			redirect(base_url());
 		}else{
-			redirect(base_url()."backoffice/login?alert=wrong");
+			redirect(base_url()."login?alert=wrong");
 		}
 	}
 
